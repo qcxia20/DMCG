@@ -92,7 +92,7 @@ def evaluate(model, device, loader, args):
                 set_rdmol_positions(batch.rd_mol[i], pred[pre_nodes : pre_nodes + n_nodes[i]])
             )
             pre_nodes += n_nodes[i]
-
+        # Why run again? I guess the aim is to generate 2X conformers
         with torch.no_grad():
             pred, _ = model(batch, sample=True)
         pred = pred[-1]
@@ -117,7 +117,7 @@ def evaluate(model, device, loader, args):
         if smiles not in smiles2pairs:
             smiles2pairs[smiles] = [[gen_mol]]
         else:
-            smiles2pairs[smiles][0].append(gen_mol)
+            smiles2pairs[smiles][0].append(gen_mol) # use same smi to append 2 copy of mols, so 2N
     for ref_mol in mol_labels:
         smiles = Chem.MolToSmiles(ref_mol)
         if len(smiles2pairs[smiles]) == 1:
@@ -467,6 +467,29 @@ def main():
     parser.add_argument("--score-prior", action="store_true", default=False)
 
     args = parser.parse_args()
+    # Default
+    os.chdir("/data/git-repo/DMCG")
+    setattr(args, "dropout", 0.1)
+    setattr(args, "use_bn", True)
+    setattr(args, "lr_warmup", True)
+    setattr(args, "use_adamw", True)
+    setattr(args, "train_subset", True)
+    setattr(args, "num_layers", 6)
+    setattr(args, "workers", 20)
+    setattr(args, "batch_size", 128)
+    setattr(args, "reuse_prior", True)
+    setattr(args, "node_attn", True)
+    setattr(args, "data_split", "confgf")
+    setattr(args, "dataset_name", "drugs" )
+    setattr(args, "remove_hs", True)
+    setattr(args, "shared_output", True)
+    setattr(args, "pred_pos_residual", True)
+    setattr(args, "sample_beta", 1.2)
+    # setattr(args, "eval_from", "/data/git-repo/DMCG/DMCG/Large_Drugs/checkpoint_94.pt")
+    setattr(args, "eval_from", "/data/git-repo/DMCG/DMCG/Small_Drugs/checkpoint_94.pt")
+    setattr(args, "base_path", "/data/1dataset/ConfGF_ICML2021/drugs_processed")
+
+    # Default
     print(args)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -594,51 +617,51 @@ def main():
         test_pref = evaluate(model, device, test_loader, args)
     print(f"train {train_pref} valid {valid_pref} test {test_pref}")
     exit(0)
-
-    for epoch in range(1, args.epochs + 1):
-        print("=====Epoch {}".format(epoch))
-        print("Training...")
-        loss_dict = train(model, device, train_loader, optimizer, scheduler, args)
-        print("Evaluating...")
-        # train_pref = evaluate(model, device, train_loader)
-        valid_pref = evaluate(model, device, valid_loader)
-        test_pref = evaluate(model, device, test_loader)
-
-        if args.checkpoint_dir:
-            print(f"Setting {os.path.basename(os.path.normpath(args.checkpoint_dir))}...")
-        # print(f"Train: {train_pref} Validation: {valid_pref} Test: {test_pref}")
-        print(f"Train: {loss_dict['loss']} Validation: {valid_pref} Test: {test_pref}")
-
-        # train_curve.append(train_pref)
-        valid_curve.append(valid_pref)
-        test_curve.append(test_pref)
-        if args.checkpoint_dir:
-            logs = {"Train": loss_dict["loss"], "Valid": valid_pref, "Test": test_pref}
-            with io.open(
-                os.path.join(args.checkpoint_dir, "log.txt"), "a", encoding="utf8", newline="\n"
-            ) as tgt:
-                print(json.dumps(logs), file=tgt)
-
-            checkpoint = {
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "scheduler_state_dict": scheduler.state_dict(),
-            }
-            torch.save(checkpoint, os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.pt"))
-            if args.enable_tb:
-                # tb_writer.add_scalar("evaluation/train", train_pref, epoch)
-                tb_writer.add_scalar("evaluation/valid", valid_pref, epoch)
-                tb_writer.add_scalar("evaluation/test", test_pref, epoch)
-                for k, v in loss_dict.items():
-                    tb_writer.add_scalar(f"training/{k}", v, epoch)
-
-    best_val_epoch = np.argmin(np.array(valid_curve))
-    if args.checkpoint_dir and args.enable_tb:
-        tb_writer.close()
-    print("Finished traning!")
-    print(f"Best validation score: {valid_curve[best_val_epoch]}")
-    print(f"Test score: {test_curve[best_val_epoch]}")
+    if False:
+        for epoch in range(1, args.epochs + 1):
+            print("=====Epoch {}".format(epoch))
+            print("Training...")
+            loss_dict = train(model, device, train_loader, optimizer, scheduler, args)
+            print("Evaluating...")
+            # train_pref = evaluate(model, device, train_loader)
+            valid_pref = evaluate(model, device, valid_loader)
+            test_pref = evaluate(model, device, test_loader)
+    
+            if args.checkpoint_dir:
+                print(f"Setting {os.path.basename(os.path.normpath(args.checkpoint_dir))}...")
+            # print(f"Train: {train_pref} Validation: {valid_pref} Test: {test_pref}")
+            print(f"Train: {loss_dict['loss']} Validation: {valid_pref} Test: {test_pref}")
+    
+            # train_curve.append(train_pref)
+            valid_curve.append(valid_pref)
+            test_curve.append(test_pref)
+            if args.checkpoint_dir:
+                logs = {"Train": loss_dict["loss"], "Valid": valid_pref, "Test": test_pref}
+                with io.open(
+                    os.path.join(args.checkpoint_dir, "log.txt"), "a", encoding="utf8", newline="\n"
+                ) as tgt:
+                    print(json.dumps(logs), file=tgt)
+    
+                checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict(),
+                }
+                torch.save(checkpoint, os.path.join(args.checkpoint_dir, f"checkpoint_{epoch}.pt"))
+                if args.enable_tb:
+                    # tb_writer.add_scalar("evaluation/train", train_pref, epoch)
+                    tb_writer.add_scalar("evaluation/valid", valid_pref, epoch)
+                    tb_writer.add_scalar("evaluation/test", test_pref, epoch)
+                    for k, v in loss_dict.items():
+                        tb_writer.add_scalar(f"training/{k}", v, epoch)
+    
+        best_val_epoch = np.argmin(np.array(valid_curve))
+        if args.checkpoint_dir and args.enable_tb:
+            tb_writer.close()
+        print("Finished traning!")
+        print(f"Best validation score: {valid_curve[best_val_epoch]}")
+        print(f"Test score: {test_curve[best_val_epoch]}")
 
 
 if __name__ == "__main__":

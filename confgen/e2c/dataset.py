@@ -1,4 +1,3 @@
-from genericpath import exists
 import numpy as np
 import random
 import os
